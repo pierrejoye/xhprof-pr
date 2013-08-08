@@ -29,10 +29,17 @@
 #include "ext/standard/info.h"
 #include "php_xhprof.h"
 #include "Zend/zend_extensions.h"
-#include <sys/time.h>
-#include <sys/resource.h>
+#ifdef PHP_WIN32
+# include "win32/time.h"
+# include "win32/unistd.h"
+#else
+# include <sys/time.h>
+# include <sys/resource.h>
+# include <unistd.h>
+#endif
+
 #include <stdlib.h>
-#include <unistd.h>
+
 #ifdef __FreeBSD__
 # if __FreeBSD_version >= 700110
 #   include <sys/resource.h>
@@ -244,12 +251,21 @@ typedef struct hp_global_t {
 /* XHProf global state */
 static hp_global_t       hp_globals;
 
+#if PHP_VERSION_ID < 50500
 /* Pointer to the original execute function */
-ZEND_DLEXPORT void (*_zend_execute) (zend_op_array *ops TSRMLS_DC);
+static ZEND_DLEXPORT void (*_zend_execute) (zend_op_array *ops TSRMLS_DC);
 
 /* Pointer to the origianl execute_internal function */
-ZEND_DLEXPORT void (*_zend_execute_internal) (zend_execute_data *data,
+static ZEND_DLEXPORT void (*_zend_execute_internal) (zend_execute_data *data,
                            int ret TSRMLS_DC);
+#else
+/* Pointer to the original execute function */
+static void (*_zend_execute_ex) (zend_execute_data *execute_data TSRMLS_DC);
+
+/* Pointer to the origianl execute_internal function */
+static void (*_zend_execute_internal) (zend_execute_data *data,
+                      struct _zend_fcall_info *fci, int ret TSRMLS_DC);
+#endif
 
 /* Pointer to the original compile function */
 static zend_op_array * (*_zend_compile_file) (zend_file_handle *file_handle,
@@ -1692,18 +1708,31 @@ void hp_mode_sampled_endfn_cb(hp_entry_t **entries  TSRMLS_DC) {
  *
  * @author hzhao, kannan
  */
+#if PHP_VERSION_ID < 50500
 ZEND_DLEXPORT void hp_execute (zend_op_array *ops TSRMLS_DC) {
+#else
+ZEND_DLEXPORT void hp_execute_ex (zend_execute_data *execute_data TSRMLS_DC) {
+  zend_op_array *ops = execute_data->op_array;
+#endif
   char          *func = NULL;
   int hp_profile_flag = 1;
 
   func = hp_get_function_name(ops TSRMLS_CC);
   if (!func) {
+#if PHP_VERSION_ID < 50500
     _zend_execute(ops TSRMLS_CC);
+#else
+    _zend_execute_ex(execute_data TSRMLS_CC);
+#endif
     return;
   }
 
   BEGIN_PROFILING(&hp_globals.entries, func, hp_profile_flag);
+#if PHP_VERSION_ID < 50500
   _zend_execute(ops TSRMLS_CC);
+#else
+  _zend_execute_ex(execute_data TSRMLS_CC);
+#endif
   if (hp_globals.entries) {
     END_PROFILING(&hp_globals.entries, hp_profile_flag);
   }
@@ -1712,16 +1741,25 @@ ZEND_DLEXPORT void hp_execute (zend_op_array *ops TSRMLS_DC) {
 
 #undef EX
 #define EX(element) ((execute_data)->element)
+
+#if PHP_VERSION_ID < 50500
 #define EX_T(offset) (*(temp_variable *)((char *) EX(Ts) + offset))
 
+ZEND_DLEXPORT void hp_execute_internal(zend_execute_data *execute_data,
+                                       int ret TSRMLS_DC) {
+#else
+#define EX_T(offset) (*EX_TMP_VAR(execute_data, offset))
+
+ZEND_DLEXPORT void hp_execute_internal(zend_execute_data *execute_data,
+                                       struct _zend_fcall_info *fci, int ret TSRMLS_DC) {
+#endif
 /**
  * Very similar to hp_execute. Proxy for zend_execute_internal().
  * Applies to zend builtin functions.
  *
  * @author hzhao, kannan
  */
-ZEND_DLEXPORT void hp_execute_internal(zend_execute_data *execute_data,
-                                       int ret TSRMLS_DC) {
+
   zend_execute_data *current_data;
   char             *func = NULL;
   int    hp_profile_flag = 1;
@@ -1736,7 +1774,9 @@ ZEND_DLEXPORT void hp_execute_internal(zend_execute_data *execute_data,
   if (!_zend_execute_internal) {
     /* no old override to begin with. so invoke the builtin's implementation  */
     zend_op *opline = EX(opline);
-#if ZEND_EXTENSION_API_NO >= 220100525
+ 						     
+//#if ZEND_EXTENSION_API_NO >= 220100525
+#if ZEND_EXTENSION_API_NO >= 220090626
     temp_variable *retvar = &EX_T(opline->result.var);
     ((zend_internal_function *) EX(function_state).function)->handler(
                        opline->extended_value,
@@ -1755,7 +1795,11 @@ ZEND_DLEXPORT void hp_execute_internal(zend_execute_data *execute_data,
 #endif
   } else {
     /* call the old override */
+#if PHP_VERSION_ID < 50500
     _zend_execute_internal(execute_data, ret TSRMLS_CC);
+#else
+    _zend_execute_internal(execute_data, fci, ret TSRMLS_CC);
+#endif
   }
 
   if (func) {
@@ -1848,8 +1892,13 @@ static void hp_begin(long level, long xhprof_flags TSRMLS_DC) {
     zend_compile_string = hp_compile_string;
 
     /* Replace zend_execute with our proxy */
+#if PHP_VERSION_ID < 50500
     _zend_execute = zend_execute;
     zend_execute  = hp_execute;
+#else
+    _zend_execute_ex = zend_execute_ex;
+    zend_execute_ex  = hp_execute_ex;
+#endif
 
     /* Replace zend_execute_internal with our proxy */
     _zend_execute_internal = zend_execute_internal;
@@ -1922,7 +1971,11 @@ static void hp_stop(TSRMLS_D) {
   }
 
   /* Remove proxies, restore the originals */
+#if PHP_VERSION_ID < 50500
   zend_execute          = _zend_execute;
+#else
+  zend_execute_ex       = _zend_execute_ex;
+#endif
   zend_execute_internal = _zend_execute_internal;
   zend_compile_file     = _zend_compile_file;
   zend_compile_string   = _zend_compile_string;
