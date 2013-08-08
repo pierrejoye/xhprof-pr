@@ -15,6 +15,11 @@
  *  limitations under the License.
  *
  ***************************************************************************/
+#include <Windows.h>
+#include <Winbase.h>
+#include <errno.h>
+#if 1
+#include "php_xhprof_win32.h"
 
 int getrusage(int who, struct rusage * rusage)
 {
@@ -59,3 +64,4 @@ int getrusage(int who, struct rusage * rusage)
     // success
     return 0;
 }
+#endif

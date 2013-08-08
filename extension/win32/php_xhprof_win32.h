@@ -81,8 +81,8 @@ struct rusage {
     struct timeval ru_utime;    /* user time used */
     struct timeval ru_stime;    /* system time used */
 };
-
-extern int getrusage(int who, struct rusage * rusage);
-
+#if 1
+int getrusage(int who, struct rusage * rusage);
+#endif
 
 #endif  /* PHP_XHPROF_WIN32_H */

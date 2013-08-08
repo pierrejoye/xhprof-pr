@@ -1,0 +1,8 @@
+
+ARG_ENABLE("xhprof", "whether to enable xhprof support", "no");
+
+if (PHP_XHPROF == "yes") {
+	EXTENSION("xhprof", " xhprof.c");
+	ADD_SOURCES(configure_module_dirname + "/win32", "php_xhprof_win32.c");
+	AC_DEFINE('HAVE_XHPROF', 1, 'Have XHProf support');
+}
