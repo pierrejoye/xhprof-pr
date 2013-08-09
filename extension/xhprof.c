@@ -1275,22 +1275,26 @@ void hp_sample_check(hp_entry_t **entries  TSRMLS_DC) {
  * @author cjiang
  */
 inline uint64 cycle_timer() {
+#if defined(PHP_WIN32) && defined(_WIN64)
+  return __rdtsc();
+#else
   uint32 __a,__d;
   uint64 val;
 
-#ifdef PHP_WIN32
+# ifdef PHP_WIN32
   __asm {
     cpuid
     rdtsc
     mov __a, eax
     mov __d, edx
   }
-#else
+# else
   asm volatile("rdtsc" : "=a" (__a), "=d" (__d));
-#endif
+# endif
 
   (val) = ((uint64)__a) | (((uint64)__d)<<32);
   return val;
+#endif
 }
 
 /**
