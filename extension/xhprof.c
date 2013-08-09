@@ -253,10 +253,10 @@ static hp_global_t       hp_globals;
 
 #if PHP_VERSION_ID < 50500
 /* Pointer to the original execute function */
-static ZEND_DLEXPORT void (*_zend_execute) (zend_op_array *ops TSRMLS_DC);
+ZEND_DLEXPORT void (*_zend_execute) (zend_op_array *ops TSRMLS_DC);
 
 /* Pointer to the origianl execute_internal function */
-static ZEND_DLEXPORT void (*_zend_execute_internal) (zend_execute_data *data,
+ZEND_DLEXPORT void (*_zend_execute_internal) (zend_execute_data *data,
                            int ret TSRMLS_DC);
 #else
 /* Pointer to the original execute function */
@@ -1775,8 +1775,7 @@ ZEND_DLEXPORT void hp_execute_internal(zend_execute_data *execute_data,
     /* no old override to begin with. so invoke the builtin's implementation  */
     zend_op *opline = EX(opline);
  						     
-//#if ZEND_EXTENSION_API_NO >= 220100525
-#if ZEND_EXTENSION_API_NO >= 220090626
+#if ZEND_EXTENSION_API_NO >= 220100525
     temp_variable *retvar = &EX_T(opline->result.var);
     ((zend_internal_function *) EX(function_state).function)->handler(
                        opline->extended_value,
